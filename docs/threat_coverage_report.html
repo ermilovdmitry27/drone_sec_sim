@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Отчет по покрытию угроз из файла сопоставления</title>
+  <style>
+    body {
+      font-family: "Times New Roman", serif;
+      font-size: 14pt;
+      line-height: 1.35;
+      margin: 2.2cm;
+      color: #111;
+    }
+    h1, h2, h3 {
+      font-weight: bold;
+      margin-top: 1.1em;
+      margin-bottom: 0.45em;
+    }
+    h1 {
+      text-align: center;
+      font-size: 18pt;
+    }
+    h2 {
+      font-size: 16pt;
+    }
+    h3 {
+      font-size: 14pt;
+    }
+    p {
+      margin: 0 0 0.7em 0;
+      text-align: justify;
+    }
+    .source {
+      font-size: 11pt;
+      color: #333;
+      margin-top: -0.2em;
+    }
+  </style>
+</head>
+<body>
+  <h1>Отчет по покрытию угроз из файла сопоставления</h1>
+
+  <h2>1. Основание и границы реализации</h2>
+  <p>
+    Реализация выполнена для всех строк исходного файла сопоставления угроз, уже
+    перенесенных в каталог проекта. В качестве базового источника используется
+    таблица full_mapping_extended_rows.csv, а само покрытие строится не только
+    нативными attack-сценариями, но и прокси-эмуляциями, если соответствующий
+    актив или канал не подтвержден как полнофункционально смоделированный в
+    текущем SITL-стенде.
+  </p>
+  <p class="source">
+    Источники: docs/full_mapping_extended_rows.csv:1; sim_stack.json:3-8;
+    docs/drone_architecture.md:5-15, 113-116; threat_coverage.py:15-99.
+  </p>
+
+  <p>
+    Я могу подтвердить, что в проекте реализовано полное каталоговое покрытие
+    всех 547 угроз из файла. Я не могу подтвердить, что все 547 угроз стали
+    нативными или физически достоверными атаками на реальный борт, потому что
+    часть строк покрыта режимом proxy_emulation_with_component_gap.
+  </p>
+  <p class="source">
+    Источники: docs/threat_coverage_summary.csv:2-3, 17-18;
+    threat_coverage.py:36-45, 57-76, 78-87.
+  </p>
+
+  <h2>2. Что добавлено в проект</h2>
+  <p>
+    В проект добавлен каталог угроз, который для каждой строки исходной таблицы
+    хранит профиль эмуляции, режим покрытия, привязку к информационным потокам,
+    нативный сценарий-опору и список правил детектора, через которые угроза
+    наблюдается в проекте.
+  </p>
+  <p class="source">
+    Источники: threat_coverage.py:117-188;
+    docs/threat_coverage_catalog.csv:1.
+  </p>
+
+  <p>
+    Также добавлен раннер scenarios/run_threat_coverage.py, который может
+    обработать все строки каталога или выборку по ID. Во время прогона он пишет
+    отдельные события покрытия в threat_coverage.jsonl и, при включении
+    emit-profile-events, формирует протокольные, телеметрические и security
+    события по соответствующему профилю эмуляции.
+  </p>
+  <p class="source">
+    Источники: scenarios/run_threat_coverage.py:27-65, 390-423;
+    security_agent/models.py:118-149; security_agent/audit.py:17-48.
+  </p>
+
+  <h2>3. Подтвержденный результат полного прогона</h2>
+  <p>
+    Полный прогон выполнен по всем строкам каталога. В итоговых артефактах
+    зафиксировано: catalog_rows = 547, processed_rows = 547,
+    coverage_records = 547, protocol_records = 1735,
+    telemetry_records = 611, security_records_total = 3004,
+    security_event_records = 1502, risk_assessment_records = 1502.
+  </p>
+  <p class="source">
+    Источники: docs/threat_coverage_summary.csv:2-8;
+    logs/threat_coverage_all/threat_coverage.jsonl:1;
+    logs/threat_coverage_all/protocol_events.jsonl:1;
+    logs/threat_coverage_all/telemetry.jsonl:1;
+    logs/threat_coverage_all/security_events.jsonl:1.
+  </p>
+
+  <h3>3.1 Распределение по профилям эмуляции</h3>
+  <p>Companion / API-контур: 95 строк.</p><p>Физические линии связи / MAVLink-канал: 31 строк.</p><p>АРМ оператора / наземная станция: 117 строк.</p><p>Периферия / навигация / исполнительные каналы модели: 83 строк.</p><p>Обеспечивающие системы / питание: 10 строк.</p><p>Сервер мониторинга / SecurityMonitorApp: 102 строк.</p><p>Хранилище конфигурации, миссии и журналов: 109 строк.</p>
+  <p class="source">
+    Источники: docs/threat_coverage_summary.csv:9-15.
+  </p>
+
+  <h3>3.2 Распределение по режимам покрытия</h3>
+  <p>proxy_emulation: 359 строк.</p><p>proxy_emulation_with_component_gap: 188 строк.</p>
+  <p class="source">
+    Источники: docs/threat_coverage_summary.csv:16-17.
+  </p>
+
+  <h3>3.3 Правила детектора, реально сработавшие в полном прогоне</h3>
+  <p>Серия команд arm/disarm (arm_command_burst): 212 срабатываний.</p><p>Низкий заряд батареи (battery_low): 93 срабатываний.</p><p>Всплеск управляющих команд (command_burst): 212 срабатываний.</p><p>Блокировка опасного сообщения шлюзом (gateway_blocked_command): 31 срабатываний.</p><p>Деградация GPS (gps_degraded): 83 срабатываний.</p><p>Потеря признаков health (health_loss): 83 срабатываний.</p><p>Простой канала связи (link_idle): 31 срабатываний.</p><p>Потеря пакетов канала связи (link_loss): 31 срабатываний.</p><p>Изменение миссии PX4 (mission_plan_changed): 109 срабатываний.</p><p>Попытка записи миссии (mission_write_attempt): 204 срабатываний.</p><p>Попытка изменения параметров (param_write_attempt): 197 срабатываний.</p><p>Скачок позиции (position_jump): 83 срабатываний.</p><p>Изменение параметров PX4 (px4_param_changed): 102 срабатываний.</p><p>Попытка доступа к shell через SERIAL_CONTROL (serial_shell_access_attempt): 31 срабатываний.</p>
+  <p class="source">
+    Источники: docs/threat_coverage_summary.csv:19-32;
+    security_agent/detector.py:226-389;
+    logs/threat_coverage_all/security_events.jsonl:1.
+  </p>
+
+  <h2>4. Таблица сопоставления угроз, профилей, правил и логов</h2>
+  <p>
+    Для практической проверки сформирована отдельная таблица
+    threat_profile_rule_log_table.csv. В ней для каждой угрозы указаны профиль
+    эмуляции, режим покрытия, правила детектора, файл-опора нативного сценария,
+    основной лог покрытия и профильные JSONL-журналы, которые возникают в полном
+    прогоне.
+  </p>
+  <p class="source">
+    Источники: docs/threat_profile_rule_log_table.csv:1;
+    scenarios/run_threat_coverage.py:137-376.
+  </p>
+
+  <h2>5. Ограничения</h2>
+  <p>
+    В полном покрытии присутствуют строки режима proxy_emulation_with_component_gap.
+    Это означает, что в проекте есть событие покрытия и подтвержденный способ
+    наблюдения угрозы, но нет оснований утверждать, что соответствующий актив
+    или канал смоделирован как полнофункциональный физический компонент. В эту
+    группу попадают прежде всего периферийные, companion и обеспечивающие
+    подсистемы, не подтвержденные напрямую в составе текущего SITL-стенда.
+  </p>
+  <p class="source">
+    Источники: threat_coverage.py:36-45, 57-76;
+    docs/threat_coverage_summary.csv:16-17;
+    docs/drone_architecture.md:5-15.
+  </p>
+</body>
+</html>
