@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import ctypes
 import fcntl
-import json
 import os
 import signal
 import subprocess
@@ -13,24 +12,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# Optional jsonschema validation
-try:
-    import jsonschema
-
-    SCHEMA_PATH = PROJECT_ROOT / "tools" / "sim_stack_schema.json"
-    _HAVE_JSONSCHEMA = True
-except ImportError:
-    _HAVE_JSONSCHEMA = False
-
-
-class _Flock(ctypes.Structure):
-    _fields_ = [
-        ("l_type", ctypes.c_short),
-        ("l_whence", ctypes.c_short),
-        ("l_start", ctypes.c_longlong),
-        ("l_len", ctypes.c_longlong),
-        ("l_pid", ctypes.c_int),
-    ]
+# Use shared config loader
+import sys as _sys
+_sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+from config_loader import load_config, ConfigError
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,29 +36,6 @@ def parse_args() -> argparse.Namespace:
         help="Optional QGroundControl AppImage path",
     )
     return parser.parse_args()
-
-
-def load_config(path: str) -> dict:
-    config_path = Path(path)
-    with config_path.open("r", encoding="utf-8") as handle:
-        config = json.load(handle)
-
-    # Validate against schema if jsonschema is available
-    if _HAVE_JSONSCHEMA and SCHEMA_PATH.exists():
-        schema = json.loads(SCHEMA_PATH.read_text())
-        try:
-            jsonschema.validate(instance=config, schema=schema)
-            print(f"✓ Configuration {path} is valid")
-        except jsonschema.ValidationError as e:
-            print(f"✗ Validation error in {path}:")
-            print(f"  Path: {'.'.join(str(p) for p in e.path)}")
-            print(f"  Error: {e.message}")
-            raise SystemExit(1)
-        except jsonschema.SchemaError as e:
-            print(f"✗ Invalid schema: {e.message}")
-            raise SystemExit(1)
-
-    return config
 
 
 def start_process(command: list[str], cwd: str | None = None, env: dict[str, str] | None = None) -> subprocess.Popen:

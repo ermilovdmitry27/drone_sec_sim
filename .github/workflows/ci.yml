@@ -21,7 +21,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install mypy ruff coverage
+          python -m pip install mypy ruff coverage bandit
+
+      - name: Run gitleaks (secrets detection)
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+
+      - name: Run bandit (security linting)
+        run: bandit -r security_agent/ -x tests/ -f json -o /tmp/bandit.json || true
+        continue-on-error: true
+
+      - name: Upload bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: /tmp/bandit.json
+        continue-on-error: true
 
       - name: Run ruff linter
         run: ruff check security_agent/ tools/ tests/ scenarios/
