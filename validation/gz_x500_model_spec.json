@@ -1,0 +1,91 @@
+{
+  "configured_make_target": "gz_x500",
+  "validation_path": "validation/gz_x500_model_spec.json",
+  "source_files": {
+    "airframe_script": "/home/user/PX4-Autopilot/ROMFS/px4fmu_common/init.d-posix/airframes/4001_gz_x500",
+    "model_sdf": "/home/user/PX4-Autopilot/Tools/simulation/gz/models/x500/model.sdf",
+    "base_model_sdf": "/home/user/PX4-Autopilot/Tools/simulation/gz/models/x500_base/model.sdf"
+  },
+  "px4_sim_model_default": "x500",
+  "rotor_count_declared": 4,
+  "sensor_types": [
+    "air_pressure",
+    "imu",
+    "magnetometer",
+    "navsat"
+  ],
+  "sensors": [
+    {
+      "name": "air_pressure_sensor",
+      "type": "air_pressure",
+      "parent_link": "base_link",
+      "update_rate_hz": 50,
+      "frame_id": "base_link"
+    },
+    {
+      "name": "magnetometer_sensor",
+      "type": "magnetometer",
+      "parent_link": "base_link",
+      "update_rate_hz": 100,
+      "frame_id": "base_link"
+    },
+    {
+      "name": "imu_sensor",
+      "type": "imu",
+      "parent_link": "base_link",
+      "update_rate_hz": 250,
+      "frame_id": "base_link"
+    },
+    {
+      "name": "navsat_sensor",
+      "type": "navsat",
+      "parent_link": "base_link",
+      "update_rate_hz": 30,
+      "frame_id": "base_link"
+    }
+  ],
+  "actuators": [
+    {
+      "joint_name": "rotor_0_joint",
+      "link_name": "rotor_0",
+      "motor_number": 0,
+      "turning_direction": "ccw",
+      "command_sub_topic": "command/motor_speed",
+      "motor_type": "velocity",
+      "max_rot_velocity": 1000
+    },
+    {
+      "joint_name": "rotor_1_joint",
+      "link_name": "rotor_1",
+      "motor_number": 1,
+      "turning_direction": "ccw",
+      "command_sub_topic": "command/motor_speed",
+      "motor_type": "velocity",
+      "max_rot_velocity": 1000
+    },
+    {
+      "joint_name": "rotor_2_joint",
+      "link_name": "rotor_2",
+      "motor_number": 2,
+      "turning_direction": "cw",
+      "command_sub_topic": "command/motor_speed",
+      "motor_type": "velocity",
+      "max_rot_velocity": 1000
+    },
+    {
+      "joint_name": "rotor_3_joint",
+      "link_name": "rotor_3",
+      "motor_number": 3,
+      "turning_direction": "cw",
+      "command_sub_topic": "command/motor_speed",
+      "motor_type": "velocity",
+      "max_rot_velocity": 1000
+    }
+  ],
+  "support_plugins": [
+    {
+      "filename": "MotorFailurePlugin",
+      "name": "gz::sim::systems::MotorFailureSystem"
+    }
+  ]
+}

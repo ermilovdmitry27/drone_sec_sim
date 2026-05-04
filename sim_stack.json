@@ -1,0 +1,27 @@
+{
+  "px4_dir": "/home/user/PX4-Autopilot",
+  "deployment_mode": "sitl",
+  "model": "gz_x500",
+  "target_platform": {
+    "airframe": "Holybro X500 v2",
+    "flight_controller": "Pixhawk 6C",
+    "hardware_validated": false
+  },
+  "validation": {
+    "hardware_evidence_path": "validation/hardware_validation.json",
+    "determinism_report_path": "validation/determinism_report.json",
+    "gz_model_spec_path": "validation/gz_x500_model_spec.json"
+  },
+  "world": "",
+  "headless": false,
+  "qgc_path": "/home/user/QGroundControl.AppImage",
+  "enable_gateway": true,
+  "gateway_upstream_port": 14540,
+  "gateway_client_port": 14541,
+  "gateway_gcs_upstream_port": 14550,
+  "gateway_gcs_client_port": 14552,
+  "gateway_enforce": false,
+  "gateway_block_serial_control": true,
+  "active_response": true,
+  "log_dir": "logs"
+}

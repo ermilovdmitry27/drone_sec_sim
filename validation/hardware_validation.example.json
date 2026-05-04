@@ -1,0 +1,25 @@
+{
+  "status": "pending",
+  "validated_on": null,
+  "operator": null,
+  "lab": null,
+  "platform": {
+    "airframe": "Holybro X500 v2",
+    "flight_controller": "Pixhawk 6C"
+  },
+  "required_checks": {
+    "power_on": false,
+    "qgc_manual_link": false,
+    "telemetry_stream": false,
+    "arm_disarm": false,
+    "mission_roundtrip": false,
+    "parameter_roundtrip": false,
+    "failsafe_observed": false
+  },
+  "artifacts": {
+    "ulog_paths": [],
+    "video_paths": [],
+    "operator_notes_path": null
+  },
+  "notes": "Copy this file to validation/hardware_validation.json after real bench or flight tests."
+}
