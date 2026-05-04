@@ -22,4 +22,5 @@ logs/
 *.tmp
 *.log
 
-docs/
+# Generated documentation (leave commented to track docs/*.md)
+# docs/
