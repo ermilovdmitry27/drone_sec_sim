@@ -1,0 +1,45 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Moscow"
+    open-pull-requests-limit: 5
+    rebase-strategy: "auto"
+    target-branch: "main"
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "pip"
+      include: "scope"
+    allow:
+      # Allow only security updates for these critical packages
+      - dependency-type: "direct"
+    ignore:
+      # Ignore major version updates for MAVSDK (may break API)
+      - dependency-name: "mavsdk"
+        update-types:
+          - "version-update:semver-major"
+      # Ignore major version updates for cryptography
+      - dependency-name: "cryptography"
+        update-types:
+          - "version-update:semver-major"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Moscow"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

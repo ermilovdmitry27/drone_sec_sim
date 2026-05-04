@@ -62,3 +62,18 @@ jobs:
             --input /tmp/drone_sec_sim_mavlink.enc \
             --output /tmp/drone_sec_sim_mavlink.dec
           cmp /tmp/drone_sec_sim_mavlink.bin /tmp/drone_sec_sim_mavlink.dec
+
+      - name: Calculate threat coverage metrics
+        run: |
+          python scenarios/run_threat_coverage.py --all --log-dir logs/threat_coverage_all
+          python tools/threat_coverage_metrics.py \
+            scenarios/threat_coverage_catalog.json \
+            logs/threat_coverage_all/threat_coverage.jsonl
+        continue-on-error: true
+
+      - name: Upload threat coverage metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: threat-coverage-metrics
+          path: logs/threat_coverage_metrics.json
+        continue-on-error: true
