@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://drone-sec-sim.example.com/sim_stack_schema.json",
+  "title": "SimStack Configuration",
+  "description": "Schema for PX4 SITL simulation stack configuration",
+  "type": "object",
+  "required": ["px4_dir", "model", "log_dir"],
+  "properties": {
+    "px4_dir": {
+      "type": "string",
+      "description": "Path to PX4-Autopilot directory"
+    },
+    "deployment_mode": {
+      "type": "string",
+      "enum": ["sitl", "hardware"],
+      "default": "sitl",
+      "description": "Deployment mode: sitl (simulator) or hardware"
+    },
+    "model": {
+      "type": "string",
+      "description": "PX4 model name (e.g., gz_x500)"
+    },
+    "target_platform": {
+      "type": "object",
+      "properties": {
+        "airframe": {
+          "type": "string",
+          "description": "Airframe name (e.g., Holybro X500 v2)"
+        },
+        "flight_controller": {
+          "type": "string",
+          "description": "Flight controller model (e.g., Pixhawk 6C)"
+        },
+        "hardware_validated": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "hardware_evidence_path": {
+          "type": "string"
+        },
+        "determinism_report_path": {
+          "type": "string"
+        },
+        "gz_model_spec_path": {
+          "type": "string"
+        }
+      }
+    },
+    "world": {
+      "type": "string",
+      "default": "",
+      "description": "Gazebo world file (empty for default)"
+    },
+    "headless": {
+      "type": "boolean",
+      "default": false,
+      "description": "Run in headless mode (no GUI)"
+    },
+    "qgc_path": {
+      "type": "string",
+      "description": "Path to QGroundControl executable"
+    },
+    "enable_gateway": {
+      "type": "boolean",
+      "default": true
+    },
+    "gateway_upstream_port": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535,
+      "default": 14540
+    },
+    "gateway_client_port": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535,
+      "default": 14541
+    },
+    "gateway_gcs_upstream_port": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535,
+      "default": 14550
+    },
+    "gateway_gcs_client_port": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535,
+      "default": 14552
+    },
+    "gateway_enforce": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enforce strict gateway filtering"
+    },
+    "gateway_block_serial_control": {
+      "type": "boolean",
+      "default": true
+    },
+    "active_response": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable active response to threats"
+    },
+    "siem_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "SIEM endpoint URL (empty to disable)"
+    },
+    "authorized_client_hosts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["127.0.0.1"],
+      "description": "List of authorized client host addresses"
+    },
+    "mavlink_encryption_key_hex": {
+      "type": "string",
+      "pattern": "^([0-9a-fA-F]{64}|[0-9a-fA-F]{128})?$",
+      "description": "Hex-encoded AES key (32 or 64 hex chars, empty to disable)"
+    },
+    "require_encrypted_clients": {
+      "type": "boolean",
+      "default": false
+    },
+    "operator_token_hashes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Map of operator_id to SHA-256 token hash"
+    },
+    "require_operator_auth": {
+      "type": "boolean",
+      "default": false
+    },
+    "log_dir": {
+      "type": "string",
+      "default": "logs",
+      "description": "Directory for log files"
+    }
+  }
+}

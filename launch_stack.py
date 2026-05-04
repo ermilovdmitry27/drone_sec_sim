@@ -13,6 +13,15 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
+# Optional jsonschema validation
+try:
+    import jsonschema
+
+    SCHEMA_PATH = PROJECT_ROOT / "tools" / "sim_stack_schema.json"
+    _HAVE_JSONSCHEMA = True
+except ImportError:
+    _HAVE_JSONSCHEMA = False
+
 
 class _Flock(ctypes.Structure):
     _fields_ = [
@@ -45,8 +54,26 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_config(path: str) -> dict:
-    with Path(path).open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+    config_path = Path(path)
+    with config_path.open("r", encoding="utf-8") as handle:
+        config = json.load(handle)
+
+    # Validate against schema if jsonschema is available
+    if _HAVE_JSONSCHEMA and SCHEMA_PATH.exists():
+        schema = json.loads(SCHEMA_PATH.read_text())
+        try:
+            jsonschema.validate(instance=config, schema=schema)
+            print(f"✓ Configuration {path} is valid")
+        except jsonschema.ValidationError as e:
+            print(f"✗ Validation error in {path}:")
+            print(f"  Path: {'.'.join(str(p) for p in e.path)}")
+            print(f"  Error: {e.message}")
+            raise SystemExit(1)
+        except jsonschema.SchemaError as e:
+            print(f"✗ Invalid schema: {e.message}")
+            raise SystemExit(1)
+
+    return config
 
 
 def start_process(command: list[str], cwd: str | None = None, env: dict[str, str] | None = None) -> subprocess.Popen:
@@ -122,6 +149,12 @@ def main() -> int:
     gateway_enforce = bool(config.get("gateway_enforce", False))
     gateway_block_serial_control = bool(config.get("gateway_block_serial_control", False))
     active_response = bool(config.get("active_response", False))
+    siem_url = str(config.get("siem_url", "") or "")
+    authorized_client_hosts = config.get("authorized_client_hosts", ["127.0.0.1"])
+    mavlink_encryption_key_hex = str(config.get("mavlink_encryption_key_hex", "") or "")
+    require_encrypted_clients = bool(config.get("require_encrypted_clients", False))
+    operator_token_hashes = config.get("operator_token_hashes", {}) or {}
+    require_operator_auth = bool(config.get("require_operator_auth", False))
 
     processes: list[subprocess.Popen] = []
     monitor_command = [
@@ -132,6 +165,8 @@ def main() -> int:
     ]
     if active_response:
         monitor_command.append("--active-response")
+    if siem_url:
+        monitor_command.extend(["--siem-url", siem_url])
     if enable_gateway:
         monitor_command.extend(
             [
@@ -150,6 +185,16 @@ def main() -> int:
             monitor_command.append("--gateway-enforce")
         if gateway_block_serial_control and not gateway_enforce:
             monitor_command.append("--gateway-block-serial-control")
+        for host in authorized_client_hosts:
+            monitor_command.extend(["--authorized-client-host", str(host)])
+        if mavlink_encryption_key_hex:
+            monitor_command.extend(["--mavlink-encryption-key-hex", mavlink_encryption_key_hex])
+        if require_encrypted_clients:
+            monitor_command.append("--require-encrypted-clients")
+        for operator_id, token_hash in operator_token_hashes.items():
+            monitor_command.extend(["--operator-token-hash", f"{operator_id}:{token_hash}"])
+        if require_operator_auth:
+            monitor_command.append("--require-operator-auth")
 
     px4_command = ["make", "px4_sitl", model]
     px4_env = build_px4_env()

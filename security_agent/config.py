@@ -1,6 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Mapping
+
+
+@dataclass
+class GatewayControl:
+    blocked_endpoints: set[str] = field(default_factory=set)
+    lockdown: bool = False
+
+    def block_endpoint(self, endpoint: str) -> None:
+        self.blocked_endpoints.add(endpoint)
+
+    def enable_lockdown(self) -> None:
+        self.lockdown = True
+
+    def is_blocked(self, endpoint: str) -> bool:
+        return endpoint in self.blocked_endpoints
 
 
 @dataclass
@@ -19,6 +35,11 @@ class GatewaySettings:
     block_mission_writes: bool = False
     block_serial_control: bool = False
     blocked_command_ids: tuple[int, ...] = ()
+    authorized_client_hosts: tuple[str, ...] = ("127.0.0.1",)
+    encryption_key_hex: str = ""
+    require_encrypted_clients: bool = False
+    operator_token_hashes: Mapping[str, str] = field(default_factory=dict)
+    require_operator_auth: bool = False
 
     @property
     def client_system_address(self) -> str:

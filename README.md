@@ -44,6 +44,25 @@ python3 -m venv .venv
 Если пути отличаются, передайте их параметрами `launch_stack.py` или измените
 `sim_stack.json`.
 
+По умолчанию в `sim_stack.json` включен строгий gateway-режим:
+`gateway_enforce=true`. В этом режиме gateway блокирует запись параметров,
+запись миссии и `SERIAL_CONTROL`.
+
+`authorized_client_hosts` ограничивает хосты, от которых gateway принимает
+MAVLink-клиентов. По умолчанию разрешен только `127.0.0.1`.
+
+Gateway поддерживает опциональное AES-GCM-шифрование клиентских MAVLink datagram.
+Ключ задается hex-строкой через `mavlink_encryption_key_hex` в `sim_stack.json`
+или через `--mavlink-encryption-key-hex`. Режим `require_encrypted_clients=true`
+отклоняет нешифрованные клиентские datagram. По умолчанию этот режим выключен,
+чтобы не ломать штатный QGroundControl/MAVSDK UDP-поток.
+
+Для операторской аутентификации gateway поддерживает authenticated encrypted
+datagram wrapper `DSEC2`: клиент передает `operator_id`, `token` и MAVLink
+payload внутри AES-GCM-конверта, а gateway сверяет SHA-256 hash токена с
+`operator_token_hashes`. Режим `require_operator_auth=true` отклоняет клиентские
+datagram без authenticated wrapper. По умолчанию этот режим выключен.
+
 ## Запуск полного стенда
 
 Из корня проекта:
@@ -91,6 +110,12 @@ Comm Link на `127.0.0.1:<gateway_gcs_client_port>`. В текущем `sim_sta
 .venv/bin/python monitor.py --enable-gateway
 .venv/bin/python monitor.py --gateway-enforce
 .venv/bin/python monitor.py --gateway-block-serial-control
+.venv/bin/python monitor.py --siem-url http://127.0.0.1:8080/events
+.venv/bin/python monitor.py --authorized-client-host 127.0.0.1
+.venv/bin/python monitor.py --mavlink-encryption-key-hex <32_or_64_hex_chars>
+.venv/bin/python monitor.py --require-encrypted-clients
+.venv/bin/python monitor.py --operator-token-hash operator-1:<sha256_hex>
+.venv/bin/python monitor.py --require-operator-auth
 ```
 
 Посмотреть полный список параметров:
@@ -164,11 +189,72 @@ Smoke-прогон по первым записям каталога:
   --scenario <scenario_name>
 ```
 
+## Проверки качества
+
+Запустить unit-тесты:
+
+```bash
+make test
+```
+
+Проверить команды, документированные в README:
+
+```bash
+make validate-readme
+```
+
+Проверить SHA-256 hash-chain в audit-логах smoke-прогона:
+
+```bash
+make verify-smoke-logs
+```
+
+Проверить AES-GCM encrypted datagram roundtrip:
+
+```bash
+make validate-encryption
+```
+
+Пересобрать Word-отчет по методам защиты:
+
+```bash
+make protection-doc
+```
+
 ## Логи
 
 По умолчанию логи пишутся в каталог `logs`. Каталог `logs/` исключен из Git
 через `.gitignore`, поэтому результаты локальных прогонов не попадают в коммиты
 автоматически.
+
+Каждая JSONL-запись audit-логов содержит `audit_hash` и `audit_prev_hash`.
+Эти поля образуют SHA-256 hash-chain внутри каждого лог-файла и позволяют
+выявлять изменение или удаление записей после формирования журнала.
+
+Если в `sim_stack.json` задан `siem_url` или `monitor.py` запущен с
+`--siem-url`, audit-события дополнительно отправляются HTTP POST-запросами в
+указанный SIEM endpoint. Если `siem_url` пустой, локальные JSONL-логи
+продолжают писаться без внешней отправки.
+
+Для проверки формата encrypted datagram можно использовать:
+
+```bash
+.venv/bin/python tools/encrypted_mavlink_datagram.py encrypt \
+  --key-hex <32_or_64_hex_chars> \
+  --input mavlink.bin \
+  --output mavlink.enc
+```
+
+Authenticated encrypted datagram для режима `require_operator_auth`:
+
+```bash
+.venv/bin/python tools/encrypted_mavlink_datagram.py encrypt \
+  --key-hex <32_or_64_hex_chars> \
+  --operator-id operator-1 \
+  --operator-token <token> \
+  --input mavlink.bin \
+  --output mavlink.auth.enc
+```
 
 ## Проверочные источники
 
@@ -178,7 +264,10 @@ Smoke-прогон по первым записям каталога:
   QGroundControl и обработка `Ctrl+C`.
 - `monitor.py`: аргументы Security Monitor.
 - `sim_stack.json`: значения `px4_dir`, `model`, `qgc_path`, gateway-портов,
-  `active_response` и `log_dir`.
+  `gateway_enforce`, `active_response`, `siem_url` и `log_dir`.
+- `security_agent/audit.py`: SHA-256 hash-chain audit-логов и SIEM HTTP export.
+- `security_agent/gateway.py`: MAVLink gateway filtering, endpoint access
+  policy, optional AES-GCM datagram encryption and operator authentication.
 - `scenarios/run_threat_coverage.py`: параметры раннера покрытия угроз.
 - `tools/architecture_report.py`: параметры генерации архитектурного отчета.
 - `validation/README.md`: команды для `extract_gz_x500_model_spec.py` и
@@ -187,4 +276,12 @@ Smoke-прогон по первым записям каталога:
   `security_agent/responder.py`, `security_agent/state_guard.py`: импорт
   `mavsdk`.
 - `requirements.txt`: Python-зависимость `mavsdk==3.15.3`.
+- `Makefile`: команды `test`, `validate-readme`, `protection-doc`,
+  `verify-smoke-logs`, `validate-encryption`.
+- `tools/encrypted_mavlink_datagram.py`: упаковка и распаковка encrypted и
+  authenticated encrypted MAVLink datagram для gateway encryption mode.
+- `tools/verify_audit_log.py`: проверка SHA-256 hash-chain в JSONL audit-логах.
+- `.github/workflows/ci.yml`: CI-проверка unit-тестов и документированных команд.
+- `SECURITY.md`: политика безопасности и известные ограничения.
+- `CONTRIBUTING.md`: правила подготовки изменений и проверок.
 - `.gitignore`: исключение `.venv/`, `logs/`, кэшей и IDE-служебных файлов.

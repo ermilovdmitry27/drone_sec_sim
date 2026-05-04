@@ -4,7 +4,7 @@ import asyncio
 
 from mavsdk import System
 
-from .config import GatewaySettings, SecuritySettings
+from .config import GatewayControl, GatewaySettings, SecuritySettings
 from .audit import AuditLogger
 from .collector import TelemetryCollector
 from .detector import ThreatDetector
@@ -29,12 +29,14 @@ class SecurityMonitorApp:
         system_address: str = "udp://:14540",
         log_dir: str = "logs",
         active_response: bool = False,
+        siem_url: str | None = None,
         gateway_settings: GatewaySettings | None = None,
         security_settings: SecuritySettings | None = None,
     ) -> None:
         self.system_address = system_address
         self.log_dir = log_dir
         self.active_response = active_response
+        self.siem_url = siem_url
         self.gateway_settings = gateway_settings
         self.security_settings = security_settings or SecuritySettings()
         self.event_queue: asyncio.Queue[object] = asyncio.Queue()
@@ -42,8 +44,9 @@ class SecurityMonitorApp:
 
     async def run(self) -> None:
         gateway = None
+        gateway_control = GatewayControl() if self.gateway_settings else None
         if self.gateway_settings:
-            gateway = MavlinkGateway(self.gateway_settings, self.event_queue)
+            gateway = MavlinkGateway(self.gateway_settings, self.event_queue, control=gateway_control)
             await gateway.start()
 
         drone = System()
@@ -52,8 +55,8 @@ class SecurityMonitorApp:
         collector = TelemetryCollector(drone, self.event_queue, self.system_address)
         detector = ThreatDetector()
         risk_engine = RiskEngine()
-        responder = Responder(drone, dry_run=not self.active_response)
-        audit = AuditLogger(self.log_dir)
+        responder = Responder(drone, dry_run=not self.active_response, gateway_control=gateway_control)
+        audit = AuditLogger(self.log_dir, siem_url=self.siem_url)
         state_guard = StateGuard(drone, self.event_queue, self.security_settings)
 
         await collector.wait_until_connected()

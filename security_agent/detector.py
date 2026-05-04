@@ -305,6 +305,20 @@ class ThreatDetector:
                         "count": event.details.get("count"),
                     },
                 )
+                )
+
+        if event.category == "access_policy":
+            findings.append(
+                SecurityEvent(
+                    rule_id="gateway_access_policy_block",
+                    severity="CRITICAL" if event.details.get("access_policy") == "lockdown" else "HIGH",
+                    description="MAVLink gateway заблокировал источник по политике доступа",
+                    telemetry_event=event.message_name,
+                    evidence={
+                        "endpoint": event.endpoint,
+                        "policy": event.details.get("access_policy"),
+                    },
+                )
             )
 
         if event.command_id == 400:

@@ -1,0 +1,24 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        additional_dependencies: []
+        args: [--ignore-missing-imports]
+        exclude: ^(tests/|tools/|scenarios/)
+
+  - repo: local
+    hooks:
+      - id: check-sim-stack-schema
+        name: Validate sim_stack.json against schema
+        entry: python tools/validate_sim_stack.py
+        language: python
+        files: ^sim_stack\.json$
+        pass_filenames: true

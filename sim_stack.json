@@ -20,8 +20,14 @@
   "gateway_client_port": 14541,
   "gateway_gcs_upstream_port": 14550,
   "gateway_gcs_client_port": 14552,
-  "gateway_enforce": false,
+  "gateway_enforce": true,
   "gateway_block_serial_control": true,
   "active_response": true,
+  "siem_url": "",
+  "authorized_client_hosts": ["127.0.0.1"],
+  "mavlink_encryption_key_hex": "",
+  "require_encrypted_clients": false,
+  "operator_token_hashes": {},
+  "require_operator_auth": false,
   "log_dir": "logs"
 }

@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import os
 import struct
 from dataclasses import dataclass, field
 from typing import Any
 
-from .config import GatewaySettings
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from .config import GatewayControl, GatewaySettings
 from .models import CommandEvent, LinkMetricsEvent, now_ts
 
 MAVLINK_V1_MAGIC = 0xFE
 MAVLINK_V2_MAGIC = 0xFD
+ENCRYPTED_DATAGRAM_MAGIC = b"DSEC1"
+AUTHENTICATED_DATAGRAM_MAGIC = b"DSEC2"
+AES_GCM_NONCE_BYTES = 12
 
 MESSAGE_NAMES = {
     11: "SET_MODE",
@@ -80,9 +91,15 @@ class _PortProtocol(asyncio.DatagramProtocol):
 
 
 class MavlinkGateway:
-    def __init__(self, settings: GatewaySettings, event_queue: asyncio.Queue[object]) -> None:
+    def __init__(
+        self,
+        settings: GatewaySettings,
+        event_queue: asyncio.Queue[object],
+        control: GatewayControl | None = None,
+    ) -> None:
         self.settings = settings
         self.event_queue = event_queue
+        self.control = control or GatewayControl()
         self.loop = asyncio.get_running_loop()
         self.transports: dict[str, asyncio.DatagramTransport] = {}
         self.protocols: list[_PortProtocol] = []
@@ -101,6 +118,15 @@ class MavlinkGateway:
             "gcs_client_inbound": ChannelStats(),
         }
         self.last_seq: dict[tuple[str, int, int], int] = {}
+        self.aesgcm = self._build_aesgcm(settings.encryption_key_hex)
+        self.encrypted_client_endpoints: dict[str, set[tuple[str, int]]] = {
+            "api": set(),
+            "gcs": set(),
+        }
+        self.authenticated_client_endpoints: dict[str, dict[tuple[str, int], str]] = {
+            "api": {},
+            "gcs": {},
+        }
         self.report_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -219,11 +245,25 @@ class MavlinkGateway:
         addr: tuple[str, int],
         now: float,
     ) -> None:
-        frames = self._parse_frames(data)
-        self._update_stats(channel, addr, data, frames, now)
+        endpoint = f"{addr[0]}:{addr[1]}"
+        plaintext, encrypted, operator_id, crypto_error = self._unwrap_client_datagram(data)
+        frames = self._parse_frames(plaintext)
+        self._update_stats(channel, addr, plaintext, frames, now)
 
+        if encrypted:
+            self.encrypted_client_endpoints[route].add(addr)
+        if operator_id:
+            self.authenticated_client_endpoints[route][addr] = operator_id
         self.client_endpoints[route][addr] = now
-        observations = self._build_command_events(route, addr, frames, now)
+        policy_blocked, policy_reason = self._policy_decision(endpoint, addr, encrypted, crypto_error)
+        observations = self._build_command_events(
+            route,
+            addr,
+            frames,
+            now,
+            policy_blocked=policy_blocked,
+            policy_reason=policy_reason,
+        )
         blocked = any(event.blocked for event in observations)
         for event in observations:
             await self.event_queue.put(event)
@@ -233,7 +273,7 @@ class MavlinkGateway:
 
         upstream_transport = self.transports.get(self._px4_channel(route))
         if upstream_transport:
-            upstream_transport.sendto(data, self.px4_endpoints[route])
+            upstream_transport.sendto(plaintext, self.px4_endpoints[route])
 
     async def _forward_to_clients(self, route: str, data: bytes) -> None:
         if route == "gcs":
@@ -241,13 +281,13 @@ class MavlinkGateway:
             if not transport:
                 return
             qgc_endpoint = (self.settings.qgc_manual_link_host, self.settings.gcs_client_port)
-            transport.sendto(data, qgc_endpoint)
+            transport.sendto(self._wrap_server_datagram("gcs", qgc_endpoint, data), qgc_endpoint)
             return
 
         client_transport = self.transports.get(self._client_channel(route))
         if client_transport:
             for client_addr in self.client_endpoints[route]:
-                client_transport.sendto(data, client_addr)
+                client_transport.sendto(self._wrap_server_datagram(route, client_addr, data), client_addr)
 
     def _expire_clients(self, route: str, now: float) -> None:
         expired = [
@@ -264,6 +304,8 @@ class MavlinkGateway:
         addr: tuple[str, int],
         frames: list[dict[str, Any]],
         timestamp: float,
+        policy_blocked: bool = False,
+        policy_reason: str = "",
     ) -> list[CommandEvent]:
         events: list[CommandEvent] = []
         endpoint = f"{addr[0]}:{addr[1]}"
@@ -274,7 +316,10 @@ class MavlinkGateway:
             if parsed is None:
                 continue
             category = parsed["category"]
-            blocked = self._should_block(parsed)
+            blocked = policy_blocked or self._should_block(parsed)
+            details = dict(parsed.get("details", {}))
+            if policy_blocked:
+                details["access_policy"] = policy_reason
             events.append(
                 CommandEvent(
                     direction="client_to_px4",
@@ -288,7 +333,22 @@ class MavlinkGateway:
                     param_name=parsed.get("param_name"),
                     blocked=blocked,
                     timestamp=timestamp,
-                    details=parsed.get("details", {}),
+                    details=details,
+                )
+            )
+
+        if policy_blocked and not events:
+            events.append(
+                CommandEvent(
+                    direction="client_to_px4",
+                    channel=channel_name,
+                    endpoint=endpoint,
+                    message_id=-1,
+                    message_name="ACCESS_POLICY",
+                    category="access_policy",
+                    blocked=True,
+                    timestamp=timestamp,
+                    details={"access_policy": policy_reason},
                 )
             )
 
@@ -307,6 +367,113 @@ class MavlinkGateway:
 
     def _client_channel(self, route: str) -> str:
         return f"{route}_client_inbound"
+
+    def _policy_decision(
+        self,
+        endpoint: str,
+        addr: tuple[str, int],
+        encrypted: bool,
+        crypto_error: str,
+    ) -> tuple[bool, str]:
+        if self.control.lockdown:
+            return True, "lockdown"
+        if self.control.is_blocked(endpoint):
+            return True, "blocked_endpoint"
+        if not self._is_authorized_client(addr):
+            return True, "unauthorized_host"
+        if crypto_error:
+            return True, crypto_error
+        if self.settings.require_encrypted_clients and not encrypted:
+            return True, "encryption_required"
+        return False, ""
+
+    def _is_authorized_client(self, addr: tuple[str, int]) -> bool:
+        hosts = self.settings.authorized_client_hosts
+        return "*" in hosts or addr[0] in hosts
+
+    def _build_aesgcm(self, key_hex: str) -> AESGCM | None:
+        if not key_hex:
+            return None
+        try:
+            key = bytes.fromhex(key_hex)
+        except ValueError as exc:
+            raise ValueError("encryption_key_hex must be a hexadecimal string") from exc
+        if len(key) not in {16, 24, 32}:
+            raise ValueError("encryption_key_hex must encode a 16, 24 or 32 byte AES key")
+        return AESGCM(key)
+
+    def _unwrap_client_datagram(self, data: bytes) -> tuple[bytes, bool, str | None, str]:
+        if data.startswith(AUTHENTICATED_DATAGRAM_MAGIC):
+            return self._unwrap_authenticated_datagram(data)
+        if not data.startswith(ENCRYPTED_DATAGRAM_MAGIC):
+            if self.settings.require_operator_auth:
+                return b"", False, None, "operator_auth_required"
+            return data, False, None, ""
+        if self.aesgcm is None:
+            return b"", False, None, "encryption_not_configured"
+        header_len = len(ENCRYPTED_DATAGRAM_MAGIC) + AES_GCM_NONCE_BYTES
+        if len(data) <= header_len:
+            return b"", False, None, "encrypted_datagram_truncated"
+        nonce = data[len(ENCRYPTED_DATAGRAM_MAGIC) : header_len]
+        ciphertext = data[header_len:]
+        try:
+            plaintext = self.aesgcm.decrypt(nonce, ciphertext, ENCRYPTED_DATAGRAM_MAGIC)
+        except InvalidTag:
+            return b"", False, None, "encrypted_datagram_auth_failed"
+        if self.settings.require_operator_auth:
+            return b"", True, None, "operator_auth_required"
+        return plaintext, True, None, ""
+
+    def _wrap_server_datagram(self, route: str, addr: tuple[str, int], data: bytes) -> bytes:
+        if self.aesgcm is None:
+            return data
+        operator_id = self.authenticated_client_endpoints[route].get(addr)
+        if operator_id:
+            nonce = os.urandom(AES_GCM_NONCE_BYTES)
+            envelope = {
+                "operator_id": operator_id,
+                "payload_b64": base64.b64encode(data).decode("ascii"),
+            }
+            plaintext = json.dumps(envelope, separators=(",", ":")).encode("utf-8")
+            return AUTHENTICATED_DATAGRAM_MAGIC + nonce + self.aesgcm.encrypt(
+                nonce,
+                plaintext,
+                AUTHENTICATED_DATAGRAM_MAGIC,
+            )
+        if addr not in self.encrypted_client_endpoints[route]:
+            return data
+        nonce = os.urandom(AES_GCM_NONCE_BYTES)
+        return ENCRYPTED_DATAGRAM_MAGIC + nonce + self.aesgcm.encrypt(nonce, data, ENCRYPTED_DATAGRAM_MAGIC)
+
+    def _unwrap_authenticated_datagram(self, data: bytes) -> tuple[bytes, bool, str | None, str]:
+        if self.aesgcm is None:
+            return b"", False, None, "encryption_not_configured"
+        header_len = len(AUTHENTICATED_DATAGRAM_MAGIC) + AES_GCM_NONCE_BYTES
+        if len(data) <= header_len:
+            return b"", False, None, "authenticated_datagram_truncated"
+        nonce = data[len(AUTHENTICATED_DATAGRAM_MAGIC) : header_len]
+        ciphertext = data[header_len:]
+        try:
+            plaintext = self.aesgcm.decrypt(nonce, ciphertext, AUTHENTICATED_DATAGRAM_MAGIC)
+        except InvalidTag:
+            return b"", False, None, "authenticated_datagram_auth_failed"
+        try:
+            envelope = json.loads(plaintext.decode("utf-8"))
+            operator_id = str(envelope["operator_id"])
+            token = str(envelope["token"])
+            payload = base64.b64decode(str(envelope["payload_b64"]), validate=True)
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return b"", False, None, "operator_envelope_invalid"
+        if not self._operator_token_valid(operator_id, token):
+            return b"", True, None, "operator_auth_failed"
+        return payload, True, operator_id, ""
+
+    def _operator_token_valid(self, operator_id: str, token: str) -> bool:
+        expected_hash = self.settings.operator_token_hashes.get(operator_id)
+        if not expected_hash:
+            return False
+        actual_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(actual_hash, expected_hash.lower())
 
     def _should_block(self, parsed: dict[str, Any]) -> bool:
         if parsed["category"] == "param_write" and self.settings.block_param_writes:

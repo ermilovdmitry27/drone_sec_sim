@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  security-monitor:
+    build: .
+    container_name: drone_sec_sim_monitor
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    ports:
+      - "14540:14540/udp"
+      - "14541:14541/udp"
+      - "14550:14550/udp"
+      - "14552:14552/udp"
+    environment:
+      - PX4_DIR=/app/PX4-Autopilot
+      - LOG_DIR=/app/logs
+    command: ["python", "monitor.py", "--log-dir", "/app/logs"]
+    restart: unless-stopped
+
+  unit-tests:
+    build: .
+    container_name: drone_sec_sim_tests
+    volumes:
+      - ./logs:/app/logs
+    command: ["python", "-m", "unittest", "discover", "-s", "tests"]
+    depends_on:
+      - security-monitor
+    profiles:
+      - test
+
+  smoke-coverage:
+    build: .
+    container_name: drone_sec_sim_smoke
+    volumes:
+      - ./logs:/app/logs
+    command: >
+      python scenarios/run_threat_coverage.py
+      --all --limit 5
+      --emit-profile-events
+      --log-dir /app/logs/threat_coverage_smoke_ci
+    profiles:
+      - test
